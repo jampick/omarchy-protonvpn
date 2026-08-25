@@ -103,6 +103,9 @@ all, permanently.
   the CLI is missing and a sign-in button when it is not signed in, each opening
   a real terminal, because credential prompts do not belong behind a bar popup.
 - `wl-copy` for the click-to-copy values.
+- `nmcli` (NetworkManager), `ip` (iproute2) and `python3` for the fast state
+  probe in `bin/protonvpn-probe`. All three are part of a base Omarchy install;
+  they are listed here because the probe will not run without them.
 
 No root and no polkit rule: `protonvpn connect` and `disconnect` run as your own
 user against the Proton daemon, which owns the privileged part itself.
