@@ -124,6 +124,19 @@ If the widget does not appear after a hot reload, restart the shell with
 `omarchy restart shell`. The plugin hot-reload path can wedge after repeated
 edits, leaving a stale instance answering IPC while the bar slot renders nothing.
 
+## Uninstall
+
+```bash
+omarchy plugin disable jampick.protonvpn
+rm -rf ~/.config/omarchy/plugins/jampick.protonvpn
+```
+
+Disabling removes it from the bar layout in `~/.config/omarchy/shell.json`. The
+widget owns no other state: it writes nothing outside its own directory, adds no
+systemd units, no polkit rules and no sudoers entries, and it never edits your
+Proton VPN configuration except through `protonvpn config set` when you click a
+toggle. Nothing to clean up beyond those two lines.
+
 ## Settings
 
 Both are exposed through the widget's manifest schema:
