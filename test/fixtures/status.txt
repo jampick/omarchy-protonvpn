@@ -1,0 +1,4 @@
+Status: Connected
+Server: US-WA#155 in Seattle, United States
+Load: 41%
+Protocol: wireguard

@@ -1,0 +1,27 @@
+
+Cities in United States:
+City            Features
+--------------  ----------
+Ashburn         P2P
+Atlanta         P2P, Tor
+Boston          P2P
+Charlotte       P2P
+Chicago         P2P
+Columbus        P2P
+Dallas          P2P
+Denver          P2P, Tor
+Detroit         P2P
+Houston         P2P
+Los Angeles     P2P
+McAllen         P2P
+Memphis         P2P
+Miami           P2P
+New York        P2P
+Philadelphia    P2P
+Phoenix         P2P
+Salt Lake City  P2P
+San Jose        P2P
+Seattle         P2P
+Secaucus        P2P
+Washington      P2P
+

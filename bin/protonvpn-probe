@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Fast Proton VPN state probe for the omarchy bar widget.
+#
+# Emits tab-separated key/value lines, the same shape `omarchy-network-status`
+# uses and `Model.parseKeyValue` already knows how to read.
+#
+# Everything here comes from NetworkManager, /sys and Proton's own cache file.
+# None of it shells out to `protonvpn`, which takes ~1.5s and can block on a
+# server-list refresh -- far too slow for something polled every couple of
+# seconds. The CLI is reserved for things only it knows (server load, city)
+# and for actions.
+
+set -uo pipefail
+
+emit() { printf '%s\t%s\n' "$1" "$2"; }
+
+# --- Active connections ------------------------------------------------------
+# One nmcli call answers tunnel, name, uuid, device and kill switch.
+active=$(nmcli -t -f NAME,UUID,TYPE,DEVICE,STATE connection show --active 2>/dev/null)
+
+iface=""; server=""; uuid=""; nmstate=""; ipv6_guard="off"
+
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  # nmcli -t escapes literal colons as '\:'; connection names can contain them.
+  IFS=':' read -r c_name c_uuid c_type c_dev c_state <<<"${line//\\:/$'\x01'}"
+  c_name=${c_name//$'\x01'/:}
+
+  # Proton keeps a dummy interface up to stop IPv6 escaping the tunnel. It is
+  # present whether or not the kill switch is enabled, so it says nothing about
+  # kill-switch state -- that is a client setting, read in the slow tier from
+  # `protonvpn config list`.
+  case "$c_name" in
+    pvpn-killswitch-ipv6) ipv6_guard="on" ;;
+  esac
+
+  if [ "$c_type" = "wireguard" ] || [ "$c_type" = "vpn" ] || [ "$c_type" = "tun" ]; then
+    case "$c_name" in
+      ProtonVPN*)
+        iface="$c_dev"; uuid="$c_uuid"; nmstate="$c_state"
+        # "ProtonVPN US-WA#155" -> "US-WA#155"
+        server="${c_name#ProtonVPN }"
+        ;;
+    esac
+  fi
+done <<<"$active"
+
+if [ -z "$iface" ]; then
+  emit state "disconnected"
+  emit ipv6_guard "$ipv6_guard"
+  exit 0
+fi
+
+emit server "$server"
+emit uuid "$uuid"
+emit iface "$iface"
+emit ipv6_guard "$ipv6_guard"
+
+if [ "$nmstate" != "activated" ]; then
+  emit state "connecting"
+  exit 0
+fi
+
+# --- Addressing and DNS ------------------------------------------------------
+dev=$(nmcli -t -f IP4.ADDRESS,IP4.DNS,IP6.ADDRESS,IP6.DNS device show "$iface" 2>/dev/null)
+ip4=""; dns4=""; ip6=""; dns6=""
+while IFS= read -r line; do
+  case "$line" in
+    IP4.ADDRESS*) [ -z "$ip4" ] && ip4="${line#*:}" ;;
+    IP4.DNS*)     [ -z "$dns4" ] && dns4="${line#*:}" ;;
+    IP6.ADDRESS*) case "${line#*:}" in fe80:*) ;; *) [ -z "$ip6" ] && ip6="${line#*:}" ;; esac ;;
+    IP6.DNS*)     [ -z "$dns6" ] && dns6="${line#*:}" ;;
+  esac
+done <<<"$dev"
+
+[ -n "$ip4" ] && emit ip "${ip4%%/*}"
+[ -n "$ip6" ] && emit ip6 "${ip6%%/*}"
+[ -n "$dns4" ] && emit dns "$dns4"
+[ -n "$dns6" ] && emit dns6 "$dns6"
+
+# --- Integrity checks --------------------------------------------------------
+# A tunnel that is "up" but not carrying the default route, or not owning DNS,
+# is worse than no tunnel: it looks protected and is not. These two facts are
+# what separate the "protected" state from the "leaking" one.
+route=$(ip route get 1.1.1.1 2>/dev/null | head -1)
+case "$route" in
+  *" dev $iface "*) emit routed 1 ;;
+  *) emit routed 0 ;;
+esac
+
+if [ -n "$dns4" ] || [ -n "$dns6" ]; then emit dns_ok 1; else emit dns_ok 0; fi
+
+# --- Counters ----------------------------------------------------------------
+rx="/sys/class/net/$iface/statistics/rx_bytes"
+tx="/sys/class/net/$iface/statistics/tx_bytes"
+[ -r "$rx" ] && emit rx_bytes "$(<"$rx")"
+[ -r "$tx" ] && emit tx_bytes "$(<"$tx")"
+
+# --- Proton's own view of the session ---------------------------------------
+# Only trusted when its connection_id matches the connection NetworkManager
+# actually has up: the file persists after a disconnect and would otherwise
+# describe a session that ended hours ago.
+persist="${XDG_CACHE_HOME:-$HOME/.cache}/Proton/VPN/connection/connection_persistence.json"
+if [ -r "$persist" ] && [ -n "$uuid" ]; then
+  python3 - "$persist" "$uuid" <<'PY' 2>/dev/null
+import json, sys
+try:
+    with open(sys.argv[1]) as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(0)
+if str(data.get("connection_id", "")) != sys.argv[2]:
+    sys.exit(0)
+srv = data.get("server") or {}
+out = {
+    "protocol": data.get("protocol", ""),
+    "exit_ip": srv.get("server_ip", ""),
+    "domain": srv.get("domain", ""),
+    "server_id": srv.get("server_name", ""),
+}
+for key, value in out.items():
+    if value:
+        print(f"{key}\t{value}")
+PY
+fi
+
+emit state "connected"

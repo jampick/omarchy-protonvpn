@@ -1,0 +1,17 @@
+server	US-WA#155
+uuid	00000000-0000-0000-0000-000000000000
+iface	proton0
+ipv6_guard	on
+ip	10.2.0.2
+ip6	2a07:b944::2:2
+dns	10.2.0.1
+dns6	2a07:b944::2:1
+routed	1
+dns_ok	1
+rx_bytes	328052616
+tx_bytes	92847272
+protocol	wireguard
+exit_ip	149.102.254.65
+domain	node-us-223.protonvpn.net
+server_id	US-WA#155
+state	connected

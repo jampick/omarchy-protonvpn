@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "jampick.protonvpn",
+  "name": "Proton VPN",
+  "version": "1.0.0",
+  "author": "jampick",
+  "license": "MIT",
+  "description": "Proton VPN state, quick connect, protection settings, and a country picker in the Omarchy bar.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Proton VPN",
+    "description": "Connect and disconnect, switch country, change kill switch and NetShield, and see at a glance whether the tunnel is actually carrying your traffic and DNS.",
+    "category": "Network",
+    "aliases": ["protonvpn", "proton"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 5,
+      "detailIntervalSec": 60
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "State poll interval (seconds)",
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 5,
+        "description": "How often the bar icon re-checks the tunnel. Cheap: reads NetworkManager and /sys, never the Proton CLI."
+      },
+      {
+        "key": "detailIntervalSec",
+        "type": "integer",
+        "label": "Detail refresh interval (seconds)",
+        "min": 15,
+        "max": 3600,
+        "step": 15,
+        "defaultValue": 60,
+        "description": "How often the open panel re-reads server load and settings from the Proton CLI. Only runs while the panel is open."
+      }
+    ]
+  }
+}
