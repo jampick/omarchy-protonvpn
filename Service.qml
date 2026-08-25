@@ -82,9 +82,23 @@ Item {
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 5, 1, 60)
   readonly property int detailIntervalSec: intSetting("detailIntervalSec", 60, 15, 3600)
 
-  // Absolute path derived from this file's own location, so the plugin keeps
+  // Absolute paths derived from this file's own location, so the plugin keeps
   // working if it is renamed or moved.
   readonly property string probePath: String(Qt.resolvedUrl("bin/protonvpn-probe")).replace(/^file:\/\//, "")
+  readonly property string runPath: String(Qt.resolvedUrl("bin/protonvpn-run")).replace(/^file:\/\//, "")
+
+  // Every process this file starts goes through bin/protonvpn-run, which caps
+  // how many bytes of stdout and stderr can come back. StdioCollector has no
+  // size limit of its own: it collects a process's output to completion and
+  // then hands QML the lot, so an unbounded response would grow the shell
+  // process for as long as the writer kept writing. The CLI's country list is
+  // built from data Proton serves, which puts a remote party on the far end of
+  // that. Capping in the wrapper drops the bytes before they are ever
+  // collected here. An over-limit call comes back non-zero and is discarded,
+  // which is what every reader below already does with a failed call.
+  function capped(argv) {
+    return ["bash", runPath].concat(argv)
+  }
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -101,7 +115,7 @@ Item {
 
   function refresh() {
     if (probeProc.running) return
-    probeProc.command = ["bash", probePath]
+    probeProc.command = capped(["bash", probePath])
     probeProc.running = true
     if (!probeWatchdog.running) probeWatchdog.start()
   }
@@ -112,17 +126,17 @@ Item {
     if (!panelOpen && force !== true) return
 
     if (!statusProc.running) {
-      statusProc.command = ["protonvpn", "status"]
+      statusProc.command = capped(["protonvpn", "status"])
       statusProc.running = true
     }
     if (!configProc.running) {
-      configProc.command = ["protonvpn", "config", "list"]
+      configProc.command = capped(["protonvpn", "config", "list"])
       configProc.running = true
     }
     // The country list does not change between releases, so fetch it once per
     // shell session rather than on every open.
     if (countries.length === 0 && !countriesProc.running) {
-      countriesProc.command = ["protonvpn", "countries", "list"]
+      countriesProc.command = capped(["protonvpn", "countries", "list"])
       countriesProc.running = true
     }
     if (!detailWatchdog.running) detailWatchdog.start()
@@ -204,7 +218,7 @@ Item {
     lastError = ""
     needsSignIn = false
     actionStatus = message
-    connectProc.command = command
+    connectProc.command = capped(command)
     connectProc.running = true
     connectWatchdog.restart()
   }
@@ -214,7 +228,7 @@ Item {
     _desired = 0
     lastError = ""
     actionStatus = "Disconnecting…"
-    disconnectProc.command = ["protonvpn", "disconnect"]
+    disconnectProc.command = capped(["protonvpn", "disconnect"])
     disconnectProc.running = true
     connectWatchdog.restart()
   }
@@ -223,7 +237,7 @@ Item {
     if (settingProc.running || !key || !value) return
     pendingSetting = key
     lastError = ""
-    settingProc.command = ["protonvpn", "config", "set", key, value]
+    settingProc.command = capped(["protonvpn", "config", "set", key, value])
     settingProc.running = true
     settingWatchdog.restart()
   }
@@ -489,7 +503,7 @@ Item {
       // Re-read rather than assuming the write took: some settings only apply
       // on the next connection, and the CLI is the authority on what stuck.
       if (!configProc.running) {
-        configProc.command = ["protonvpn", "config", "list"]
+        configProc.command = root.capped(["protonvpn", "config", "list"])
         configProc.running = true
       }
     }

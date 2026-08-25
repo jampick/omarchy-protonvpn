@@ -100,6 +100,22 @@ Every poll has a watchdog. A poll is skipped while its own process is still
 running, so one that never exits would otherwise stop the panel refreshing at
 all, permanently.
 
+## Nothing unbounded reaches the shell
+
+Quickshell's `StdioCollector` has no size limit: it collects a process's output
+to completion and hands QML the whole thing. The bar's shell process is
+long-lived and owns every widget in the bar, so a response that never stopped
+arriving would be a denial of service and not just a big string. Some of that
+output is built from data Proton serves over the network, which puts a remote
+party on the far end of it.
+
+So every process this widget starts, the probe included, runs through
+`bin/protonvpn-run`, which caps stdout and stderr at 64 KiB each and drops the
+excess in a separate process, before any of it is collected in QML. 64 KiB is
+about 12x the largest real response (`countries list`, ~5.5 KiB). An over-limit
+call comes back non-zero, so the reader discards it instead of parsing half a
+record, and the panel keeps the last good value.
+
 ## Requirements
 
 - `proton-vpn-cli` on `PATH`, signed in. The panel offers an install button when
@@ -161,6 +177,12 @@ all the parsing and formatting runs under Node without a compositor:
 cd test && node model.test.js
 ```
 
+The output cap has its own tests, which need only bash and coreutils:
+
+```bash
+bash test/run.test.sh
+```
+
 The fixtures in `test/fixtures/` are real captured output from `protonvpn
 status`, `config list`, `countries list`, `cities list US`, and the probe, with the
 local NetworkManager connection uuid zeroed.
@@ -173,6 +195,7 @@ Panel.qml               bar button, panel UI, cursor model, row components
 Service.qml             process orchestration, two-tier polling, watchdogs
 Model.js                pure parsing/formatting (Node-testable)
 bin/protonvpn-probe     the fast state probe
+bin/protonvpn-run       output cap between the CLI and the shell
 LICENSE                 MIT, matching Omarchy
 test/                   Node tests and real CLI fixtures
 ```

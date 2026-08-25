@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Run a command with a hard cap on how many bytes of its output reach the shell.
+#
+# Quickshell's StdioCollector has no size limit: it accumulates a process's
+# stdout to completion and then hands QML the whole thing. Every slow-tier
+# response here comes from the Proton VPN CLI, and some of it (`countries list`)
+# is built from data Proton serves over the network. A CLI that misbehaves, or
+# one fed a hostile server list, could therefore grow the bar's shell process
+# without bound. That process is long-lived and owns the whole bar, so this is
+# a denial of service and not merely a large string.
+#
+# The cap is applied here, in a separate process, so the bytes are dropped
+# before they are ever collected in QML.
+#
+# 64 KiB is about 12x the largest real response (`countries list`, ~5.5 KiB).
+# Nothing past that is output the panel could render anyway.
+#
+# Truncating stdout kills the writer with SIGPIPE, so an over-limit call comes
+# back non-zero and the caller discards it rather than parsing half a record.
+# An exit code that is not truncation is passed through untouched, because the
+# panel reads it: 127 is how it tells "the CLI is not installed" apart from
+# "the CLI refused".
+
+set -uo pipefail
+
+limit=${PROTONVPN_MAX_BYTES:-65536}
+
+if [ $# -eq 0 ]; then
+  echo "usage: protonvpn-run COMMAND [ARG...]" >&2
+  exit 2
+fi
+
+# stderr gets its own cap on its own pipe, so a flood on one stream can neither
+# hide nor consume the budget of the other.
+exec 3> >(head -c "$limit" >&2)
+
+"$@" 2>&3 | head -c "$limit"
+rc=${PIPESTATUS[0]}
+
+# Close the pipe so the stderr capper sees EOF, then let it finish writing.
+exec 3>&-
+wait 2>/dev/null
+
+exit "$rc"
