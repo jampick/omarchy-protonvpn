@@ -66,6 +66,32 @@ eq('netshield wraps', M.nextSettingValue({...ns, index: 2, boolean: false, value
 eq('unknown value known=false', M.settingRows({ipv6: 'weird'}).find(r=>r.key==='ipv6').known, false)
 eq('unknown value next', M.nextSettingValue(M.settingRows({ipv6:'weird'}).find(r=>r.key==='ipv6')), 'off')
 
+// --- kill switch is the one setting the CLI refuses while connected ---
+// `protonvpn config set kill-switch <any>` exits 2 with "Disconnect before
+// changing Kill Switch" whenever a tunnel is up, including when the value it
+// is being set to is the value it already has. Every other setting applies
+// fine while connected, so the lock is per-setting, not a blanket rule.
+const disc = M.settingRows(cfg, false)
+const conn = M.settingRows(cfg, true)
+const ksDisc = disc.find(r => r.key === 'kill-switch')
+const ksConn = conn.find(r => r.key === 'kill-switch')
+eq('kill-switch unlocked when disconnected', ksDisc.locked, false)
+eq('kill-switch locked when connected', ksConn.locked, true)
+eq('kill-switch keeps its value when locked', ksConn.value, 'off')
+eq('kill-switch checked still reflects state', ksConn.checked, false)
+eq('locked row explains itself', ksConn.description, 'Disconnect to change this')
+eq('unlocked row keeps its description', ksDisc.description, 'Block traffic if the tunnel drops')
+eq('locked row has no next value', M.nextSettingValue(ksConn), '')
+eq('unlocked row still cycles', M.nextSettingValue(ksDisc), 'standard')
+// Only kill-switch locks. netshield, vpn-accelerator, port-forwarding,
+// moderate-nat and ipv6 were all verified to apply against a live tunnel.
+eq('only kill-switch locks while connected',
+   conn.filter(r => r.locked).map(r => r.key), ['kill-switch'])
+eq('nothing locks while disconnected', disc.filter(r => r.locked).length, 0)
+// settingRows(cfg) with no second argument is the disconnected shape, so the
+// existing callers and tests above keep meaning what they meant.
+eq('connected defaults to false', M.settingRows(cfg).find(r=>r.key==='kill-switch').locked, false)
+
 // --- countries ---
 const cs = M.parseCountries(read('countries.txt'))
 eq('countries count > 100', cs.length > 100, true)

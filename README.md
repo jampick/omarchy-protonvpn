@@ -67,7 +67,10 @@ highlighted. Hovering moves the cursor rather than painting a second highlight.
 - **Protection**. Kill switch, NetShield, VPN accelerator, port forwarding,
   moderate NAT, IPv6. Booleans get a switch; NetShield gets a value pill because
   it has three states and a switch would have to lie about one of them. The whole
-  row is the click target either way, so one Enter cycles it.
+  row is the click target either way, so one Enter cycles it. Kill switch is the
+  exception: the Proton CLI refuses to change it while a tunnel is up, so that
+  row goes read-only and says "Disconnect to change this" instead of offering a
+  click that can only fail. Every other setting applies while connected.
 - **Countries**. Filterable, with the country you are in pinned to the top.
   Clicking one connects to the fastest server there.
 

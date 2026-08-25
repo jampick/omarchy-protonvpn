@@ -87,7 +87,7 @@ Panel {
     return phrase.toUpperCase()
   }
 
-  readonly property var settingRows: Model.settingRows(vpn.config)
+  readonly property var settingRows: Model.settingRows(vpn.config, vpn.connected)
   readonly property var quickOptions: Model.quickConnectOptions()
   readonly property var countryList: Model.countryRows(vpn.countries, vpn.country, countryQuery)
 
@@ -194,6 +194,7 @@ Panel {
   function cycleSetting(index) {
     if (index < 0 || index >= settingRows.length) return
     var row = settingRows[index]
+    if (row.locked) return
     vpn.applySetting(row.key, Model.nextSettingValue(row))
   }
 
@@ -275,21 +276,23 @@ Panel {
     fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
     foreground: root.barIconColor
 
+    // The bar renders this itself, in a PopupWindow sized and anchored below
+    // the bar (Bar.qml showTooltip). A PanelToolTip declared here instead is a
+    // Popup parented to the bar's own layer-shell window, so it gets clipped to
+    // the ~26px bar strip and comes out unreadable. Every first-party bar
+    // widget uses tooltipText; so does this one now.
+    tooltipText: {
+      if (root.opened) return ""
+      var label = Model.stateLabel(root.vpnState)
+      if (root.leaking) return label + " · " + vpn.leakReason
+      if (vpn.connected && vpn.server !== "") return label + " · " + vpn.server
+      return label
+    }
+
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) root.toggleVpn()
       else if (buttonCode === Qt.MiddleButton) { vpn.refresh(); vpn.refreshDetails(true) }
       else root.toggle()
-    }
-
-    PanelToolTip {
-      visible: button.tooltipHovered && !root.opened
-      text: {
-        var label = Model.stateLabel(root.vpnState)
-        if (root.leaking) return label + " · " + vpn.leakReason
-        if (vpn.connected && vpn.server !== "") return label + " · " + vpn.server
-        return label
-      }
-      fontFamily: root.fontFamily
     }
   }
 
@@ -791,6 +794,10 @@ Panel {
 
     readonly property bool isBusy: vpn.pendingSetting === (row ? row.key : "")
     readonly property bool isSelected: root.focusSection === "settings" && root.settingIndex === slot
+    // Kill switch while connected. The CLI will refuse it, so the row shows
+    // the current value and stops being a control rather than offering a
+    // click whose only possible outcome is an error line.
+    readonly property bool isLocked: row ? row.locked === true : false
 
     hasCursor: root.cursorActive && isSelected
     foreground: root.foreground
@@ -801,8 +808,8 @@ Panel {
     MouseArea {
       anchors.fill: parent
       hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      enabled: !vpn.settingBusy
+      cursorShape: settingItem.isLocked ? Qt.ArrowCursor : Qt.PointingHandCursor
+      enabled: !vpn.settingBusy && !settingItem.isLocked
 
       onContainsMouseChanged: if (containsMouse) root.focusRow("settings", settingItem.slot)
       onClicked: {
@@ -852,6 +859,7 @@ Panel {
         id: settingControl
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
+        opacity: settingItem.isLocked ? 0.45 : 1
         implicitWidth: Math.max(settingSwitch.visible ? settingSwitch.implicitWidth : 0,
                                 settingValue.visible ? settingValue.implicitWidth : 0)
         implicitHeight: Math.max(settingSwitch.visible ? settingSwitch.implicitHeight : 0,

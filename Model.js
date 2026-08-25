@@ -203,7 +203,15 @@ function settingDefinitions() {
       description: "Block traffic if the tunnel drops",
       values: ["off", "standard"],
       labels: ["Off", "On"],
-      boolean: true
+      boolean: true,
+      // The CLI refuses `config set kill-switch` while a tunnel is up, even
+      // when the value would not change: "Disconnect before changing Kill
+      // Switch." It is the only setting that does this -- netshield,
+      // vpn-accelerator, port-forwarding, moderate-nat and ipv6 all apply
+      // while connected. Offering a control that cannot succeed and then
+      // printing the CLI's refusal in red is worse than not offering it, so
+      // the row goes read-only while connected and says why.
+      requiresDisconnect: true
     },
     {
       key: "netshield",
@@ -256,7 +264,7 @@ function settingDefinition(key) {
   return null
 }
 
-function settingRows(config) {
+function settingRows(config, connected) {
   var values = config || {}
   var defs = settingDefinitions()
   var rows = []
@@ -265,10 +273,12 @@ function settingRows(config) {
     var def = defs[i]
     var current = String(values[def.key] || "")
     var index = def.values.indexOf(current)
+    var locked = def.requiresDisconnect === true && connected === true
     rows.push({
       key: def.key,
       label: def.label,
-      description: def.description,
+      description: locked ? "Disconnect to change this" : def.description,
+      locked: locked,
       boolean: def.boolean,
       values: def.values,
       labels: def.labels,
@@ -289,6 +299,7 @@ function settingRows(config) {
 // first value), instead of getting stuck.
 function nextSettingValue(row) {
   if (!row || !row.values || row.values.length === 0) return ""
+  if (row.locked) return ""
   if (row.index === -1) return row.values[0]
   if (row.boolean) return row.index > 0 ? row.values[0] : row.values[row.values.length - 1]
   return row.values[(row.index + 1) % row.values.length]
