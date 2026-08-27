@@ -18,7 +18,7 @@ emit() { printf '%s\t%s\n' "$1" "$2"; }
 # One nmcli call answers tunnel, name, uuid, device and kill switch.
 active=$(nmcli -t -f NAME,UUID,TYPE,DEVICE,STATE connection show --active 2>/dev/null)
 
-iface=""; server=""; uuid=""; nmstate=""; ipv6_guard="off"
+iface=""; server=""; uuid=""; nmstate=""; ipv6_guard="off"; killswitch="off"
 
 while IFS= read -r line; do
   [ -n "$line" ] || continue
@@ -30,8 +30,19 @@ while IFS= read -r line; do
   # present whether or not the kill switch is enabled, so it says nothing about
   # kill-switch state -- that is a client setting, read in the slow tier from
   # `protonvpn config list`.
+  #
+  # The blocking dummy is a different connection, and whether it is *up right
+  # now* is not the same question as what the setting says. It has to be read
+  # here in the fast tier, because the one moment it matters most -- armed at
+  # boot with no tunnel behind it -- is exactly the moment the CLI is
+  # unreachable and the slow tier can answer nothing at all.
+  #
+  # A permanent kill switch uses the '-perm' ids; a standard one uses the bare
+  # ones. Matching only the bare form reports "off" for the permanent case,
+  # which is the one that blocks the network.
   case "$c_name" in
-    pvpn-killswitch-ipv6) ipv6_guard="on" ;;
+    pvpn-killswitch-ipv6|pvpn-killswitch-ipv6-perm) ipv6_guard="on" ;;
+    pvpn-killswitch|pvpn-killswitch-perm) killswitch="on" ;;
   esac
 
   if [ "$c_type" = "wireguard" ] || [ "$c_type" = "vpn" ] || [ "$c_type" = "tun" ]; then
@@ -48,6 +59,7 @@ done <<<"$active"
 if [ -z "$iface" ]; then
   emit state "disconnected"
   emit ipv6_guard "$ipv6_guard"
+  emit killswitch "$killswitch"
   exit 0
 fi
 
@@ -55,6 +67,7 @@ emit server "$server"
 emit uuid "$uuid"
 emit iface "$iface"
 emit ipv6_guard "$ipv6_guard"
+emit killswitch "$killswitch"
 
 if [ "$nmstate" != "activated" ]; then
   emit state "connecting"

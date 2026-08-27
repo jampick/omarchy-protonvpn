@@ -15,6 +15,7 @@ const info = M.parseKeyValue(read('probe.txt'))
 eq('probe.state', info.state, 'connected')
 eq('probe.server', info.server, 'US-WA#155')
 eq('probe.routed', info.routed, '1')
+eq('probe.killswitch', info.killswitch, 'on')
 eq('connectionState(live)', M.connectionState(info), 'protected')
 eq('leakReason(live)', M.leakReason(info), '')
 
@@ -27,6 +28,16 @@ eq('reason(both)', M.leakReason({state:'connected', routed:'0', dns_ok:'0'}), 'T
 eq('state(off)', M.connectionState({state:'disconnected'}), 'off')
 eq('state(connecting)', M.connectionState({state:'connecting'}), 'connecting')
 eq('state(empty)', M.connectionState({}), 'off')
+
+// The kill switch deadlock: armed with no tunnel behind it. Distinct from
+// plain 'off', because the network is gone and only a human can get it back.
+eq('state(blocked)', M.connectionState({state:'disconnected', killswitch:'on'}), 'blocked')
+eq('state(off, ks off)', M.connectionState({state:'disconnected', killswitch:'off'}), 'off')
+// Kill switch armed *and* a tunnel up is just the normal protected case; the
+// deadlock reading must not leak into it.
+eq('state(ks on, connected)', M.connectionState({state:'connected', routed:'1', dns_ok:'1', killswitch:'on'}), 'protected')
+eq('state(ks on, leaking)', M.connectionState({state:'connected', routed:'0', dns_ok:'1', killswitch:'on'}), 'leaking')
+eq('label(blocked)', M.stateLabel('blocked'), 'Network blocked')
 
 // --- status ---
 const st = M.parseStatus(read('status.txt'))
@@ -131,6 +142,13 @@ eq('failureMessage prefers stderr', M.failureMessage('out', 'the real error', 'x
 eq('failureMessage fallback', M.failureMessage('', '', 'nothing happened'), 'nothing happened')
 eq('needsSignIn', M.needsSignIn('You are not logged in. Run protonvpn signin'), true)
 eq('needsSignIn false', M.needsSignIn('Could not reach server'), false)
+// The exact wording `protonvpn connect` returns on a dead session. Missing it is
+// how the bootstrap script once concluded it was signed in, and then armed a
+// kill switch it had no session left to open.
+eq('needsSignIn(connect auth)', M.needsSignIn(
+  "Error: Authentication required.Please sign in with 'protonvpn signin' before connecting."), true)
+eq('needsSignIn(auth required alone)', M.needsSignIn('Error: Authentication required.'), true)
+eq('needsSignIn not tripped by chatter', M.needsSignIn('Server list is outdated, updating...'), false)
 eq('elide', M.elide('a'.repeat(200)).length, 140)
 
 // --- GUI conflict ---
@@ -143,7 +161,7 @@ eq('guiConflict not confused with signin', M.guiConflict('You are not logged in'
 eq('signin not confused with gui', M.needsSignIn(guiErr), false)
 
 // --- icons ---
-eq('icons distinct', new Set(['protected','leaking','connecting','off'].map(M.stateIcon)).size, 4)
+eq('icons distinct', new Set(['protected','leaking','connecting','off','blocked'].map(M.stateIcon)).size, 5)
 
 console.log(fail === 0 ? '\nALL PASS' : `\n${fail} FAILURES`)
 process.exit(fail === 0 ? 0 : 1)

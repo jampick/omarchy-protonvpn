@@ -34,7 +34,15 @@ function connectionState(info) {
   var value = info || {}
   var state = String(value.state || "disconnected")
 
-  if (state === "disconnected") return "off"
+  if (state === "disconnected") {
+    // A kill switch up with no tunnel behind it is not the same thing as being
+    // disconnected, and calling both "Disconnected" hides the one state the
+    // user actually has to act on. Traffic is contained, which is the kill
+    // switch working -- but the network is gone, and so is the route to the
+    // API needed to sign in and get it back. That is the deadlock, and it is
+    // what greets you after a reboot with no readable session.
+    return value.killswitch === "on" ? "blocked" : "off"
+  }
   if (state === "connecting") return "connecting"
   if (value.routed === "0" || value.dns_ok === "0") return "leaking"
   return "protected"
@@ -59,6 +67,10 @@ function stateIcon(state) {
   if (state === "protected") return "󰦝"    // nf-md-shield_lock, filled
   if (state === "leaking") return "󰻌"      // nf-md-shield_alert, filled with "!"
   if (state === "connecting") return "󰒙"   // nf-md-shield_outline, hollow
+  // Deliberately not a shield: nothing is being shielded, the door is just
+  // bolted. A padlock reads that way at a glance and cannot be mistaken for
+  // one of the four shield states at bar size.
+  if (state === "blocked") return "󰌾"      // nf-md-lock
   return "󰦞"                               // nf-md-shield_off, struck through
 }
 
@@ -66,6 +78,7 @@ function stateLabel(state) {
   if (state === "protected") return "Protected"
   if (state === "leaking") return "Not protected"
   if (state === "connecting") return "Connecting"
+  if (state === "blocked") return "Network blocked"
   return "Disconnected"
 }
 
@@ -146,6 +159,9 @@ function needsSignIn(text) {
     || /please\s+(sign|log)\s*in/i.test(value)
     || /\bsignin\b/i.test(value)
     || /session\s+expired/i.test(value)
+    // What `connect` says, and the only one some dead sessions ever emit:
+    // `status` can look perfectly healthy right up until a connect is refused.
+    || /authentication\s+required/i.test(value)
 }
 
 // The CLI refuses to run at all while the Proton VPN desktop app is open. That

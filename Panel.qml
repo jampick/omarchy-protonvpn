@@ -42,19 +42,24 @@ Panel {
   // See Service.qml: `state` is taken by QQuickItem.
   readonly property string vpnState: vpn.tunnelState
   readonly property bool leaking: vpn.leaking
+  readonly property bool blocked: vpnState === "blocked"
   readonly property string icon: Model.stateIcon(vpnState)
 
   // The bar icon is the whole point of the widget, so it earns its colours:
   // full-strength foreground only when the tunnel is genuinely carrying
   // traffic, urgent when it claims to be up and is not, and dimmed when off.
+  // Blocked is urgent too, but for the opposite reason to leaking: nothing is
+  // escaping, the machine simply has no network and cannot get one back
+  // unaided. Dimming it like an idle "off" would bury the one state that
+  // needs a human.
   readonly property color barIconColor: {
-    if (leaking) return bar ? bar.urgent : Color.urgent
+    if (leaking || blocked) return bar ? bar.urgent : Color.urgent
     if (vpnState === "protected") return barForeground
     return Qt.darker(barForeground, 1.55)
   }
 
   readonly property color panelIconColor: {
-    if (leaking) return urgent
+    if (leaking || blocked) return urgent
     if (vpnState === "protected") return foreground
     return dim
   }
@@ -81,6 +86,7 @@ Panel {
     if (vpn.guiRunning) return "DESKTOP APP HAS THE CLI"
     if (vpn.needsSignIn) return "NOT SIGNED IN"
     if (vpnState === "connecting") return "CONNECTING…"
+    if (blocked) return "KILL SWITCH BLOCKING ALL TRAFFIC"
     if (vpnState === "off") return "NOT CONNECTED"
     if (leaking) return vpn.leakReason.toUpperCase()
     if (vpn.country !== "") return (vpn.city !== "" ? vpn.city + ", " + vpn.country : vpn.country).toUpperCase()
@@ -420,6 +426,36 @@ Panel {
             }
           }
 
+          // --- Kill switch deadlock banner --------------------------------------
+          // The kill switch is doing its job and that is the problem: with no
+          // tunnel behind it there is no route to the API needed to sign in and
+          // build one. Nothing in the panel below can fix this, because the
+          // slow tier cannot reach the CLI either -- so the banner has to say
+          // what the one working move is rather than leave the user guessing.
+          CursorSurface {
+            visible: root.blocked
+            width: parent.width
+            implicitHeight: blockedText.implicitHeight + Style.spacing.rowPaddingX
+            foreground: root.urgent
+            bordered: true
+
+            Text {
+              id: blockedText
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.leftMargin: Style.spacing.rowPaddingX
+              anchors.rightMargin: Style.spacing.rowPaddingX
+              anchors.verticalCenter: parent.verticalCenter
+              text: vpn.needsSignIn
+                ? "The kill switch is blocking all traffic and there is no session to build a tunnel with. Sign in below to lift it safely."
+                : "The kill switch is blocking all traffic with no tunnel behind it. Connect, or sign in below to lift it safely."
+              color: root.urgent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              wrapMode: Text.WordWrap
+            }
+          }
+
           // --- Desktop app conflict ---------------------------------------------
           // The CLI and the GTK app refuse to run at the same time. Deliberately
           // not the urgent colour: the tunnel is fine and the bar icon above is
@@ -473,11 +509,15 @@ Panel {
             ])
           }
 
+          // Also offered when the kill switch is blocking with no session in
+          // sight, which is the state where it is the only thing that works.
           Button {
-            visible: vpn.installed && vpn.needsSignIn
+            visible: vpn.installed && (vpn.needsSignIn || root.blocked)
             width: parent.width
-            text: "Sign in to Proton VPN"
-            tooltipText: "Opens a terminal for protonvpn signin"
+            text: root.blocked ? "Lift kill switch and sign in" : "Sign in to Proton VPN"
+            tooltipText: root.blocked
+              ? "Lifts the kill switch, signs in, reconnects, then re-arms it"
+              : "Opens a terminal for protonvpn-bootstrap"
             foreground: root.foreground
             fontFamily: root.fontFamily
             fontSize: Style.font.bodySmall

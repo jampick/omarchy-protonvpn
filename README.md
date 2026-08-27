@@ -22,10 +22,44 @@ So this widget checks three things, not one:
 | Protected | filled shield with a lock | Tunnel up, default route through it, DNS answered by it |
 | Not protected | filled shield with `!`, in the urgent colour | Tunnel up, but traffic or DNS is bypassing it |
 | Connecting | hollow shield | Interface exists, not activated yet |
+| Network blocked | padlock, in the urgent colour | Kill switch up with no tunnel behind it |
 | Disconnected | shield struck through | No tunnel |
 
 The "not protected" state also raises a banner in the panel naming which of the
 two checks failed.
+
+"Network blocked" is deliberately not a shield: nothing is being shielded, the
+door is just bolted. It is also deliberately not folded into "Disconnected",
+even though both mean "no tunnel", because only one of them means the machine
+has no network and cannot get one back on its own. See below.
+
+## The kill switch can lock you out of fixing it
+
+A permanent kill switch is a NetworkManager dummy connection — `pvpn-killswitch-perm`,
+route metric 98, DNS `0.0.0.0` at dns-priority −1400 — saved as a *system*
+connection, so it autoconnects at boot before any user session exists. Proton's
+only exception to it is a host route to one specific VPN server, added once a
+server is known, which requires a session.
+
+Reboot without a readable session and those two facts collide: the app has to
+reach Proton's API to authenticate, and the kill switch it installed blocks
+exactly that. The CLI cannot dig you out either — `protonvpn config set` refuses
+to change any setting while signed out, and it has no "permanent" value to set
+in the first place, only `off` and `standard`. Hand-editing
+`~/.config/Proton/VPN/settings.json` is the only move left, and it leaves the
+machine unprotected until someone remembers to undo it.
+
+The widget cannot fix that on its own, but it can refuse to be vague about it.
+The fast tier reads whether the blocking connection is up — which matters
+precisely because in this state the slow tier can reach nothing at all — names
+the state, and offers the one button that works.
+
+That button prefers `protonvpn-bootstrap` if it is on `PATH`: a host script that
+lifts the kill switch, signs in, reconnects, re-arms, and re-arms fail-closed on
+every abort path. It is **not** part of this plugin. It touches NetworkManager
+and your account, which is not something a bar widget should install on other
+people's machines. Without it the button falls back to a plain `protonvpn
+signin`, which is the right thing when no kill switch is holding the door shut.
 
 ## The Proton VPN desktop app takes the CLI hostage
 
@@ -83,9 +117,15 @@ mirrors every flag a CLI has is a worse panel than one that picks.
 Two tiers, because the two sources of truth cost about 18x different amounts.
 
 **Fast: `bin/protonvpn-probe`, ~85ms.** NetworkManager, `/sys`, and Proton's
-own session cache. Tunnel state, server name, addressing, DNS, routing and byte
-counters. This runs on a timer whether or not the panel is open, which is what
-keeps the bar icon honest. It never shells out to `protonvpn`.
+own session cache. Tunnel state, server name, addressing, DNS, routing, byte
+counters, and whether the kill switch connection is currently up. This runs on a
+timer whether or not the panel is open, which is what keeps the bar icon honest.
+It never shells out to `protonvpn`.
+
+Kill-switch state is read here rather than in the slow tier even though it is
+nominally a client setting, because the moment it matters most — armed at boot
+with nothing behind it — is the exact moment the CLI is unreachable. A fact that
+is only available when nothing is wrong is not worth reading.
 
 **Slow: the `protonvpn` CLI, ~1.5s and occasionally far worse when it decides
 to refresh its 24MB server list.** Server load, city, settings, country list.

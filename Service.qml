@@ -245,9 +245,31 @@ Item {
   // Signing in is an interactive credential prompt, so it belongs in a real
   // terminal rather than behind a bar popup. Omarchy already has a wrapper
   // that puts one on screen with the right window rules.
+  //
+  // It goes through protonvpn-bootstrap rather than `protonvpn signin`, because
+  // a bare sign-in cannot succeed in the state that most needs it: kill switch
+  // armed, no session, so the network is blocked and the sign-in cannot reach
+  // Proton's API. The CLI is no help either -- `config set` refuses to change
+  // anything while signed out, and has no value for a permanent kill switch to
+  // begin with. The bootstrap lifts the kill switch, signs in, reconnects and
+  // re-arms, and re-arms fail-closed on every abort path.
+  //
+  // It is the same command whether or not the kill switch is up: with no kill
+  // switch present it is just a sign-in and a connect. One path, so there is no
+  // state in which the button does the wrong thing.
+  //
+  // protonvpn-bootstrap is not part of this plugin -- it is host plumbing that
+  // touches NetworkManager and the account, which does not belong in a bar
+  // widget other people install. So the button prefers it when it is on PATH
+  // and falls back to a plain sign-in when it is not, rather than shipping a
+  // button that dies with "command not found" on someone else's machine.
   function signIn() {
-    Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", "protonvpn", "signin"])
-    actionStatus = "Sign in from the terminal window"
+    Quickshell.execDetached([
+      "omarchy-launch-floating-terminal-with-presentation",
+      "bash", "-lc",
+      "if command -v protonvpn-bootstrap >/dev/null 2>&1; then exec protonvpn-bootstrap; else exec protonvpn signin; fi"
+    ])
+    actionStatus = "Finish signing in from the terminal window"
     actionStatusTimer.restart()
   }
 

@@ -2,6 +2,7 @@ server	US-WA#155
 uuid	00000000-0000-0000-0000-000000000000
 iface	proton0
 ipv6_guard	on
+killswitch	on
 ip	10.2.0.2
 ip6	2a07:b944::2:2
 dns	10.2.0.1
